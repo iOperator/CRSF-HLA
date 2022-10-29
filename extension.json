@@ -2,7 +2,7 @@
   "name": "CRSF",
   "apiVersion": "1.0.0",
   "author": "Max Gröning",
-  "version": "0.5.0",
+  "version": "0.5.2",
   "description": "Crossfire decoder for R/C protocol as used by TBS Crossfire, Tracer or ExpressLRS",
   "extensions": {
     "CRSF": {
