@@ -3,8 +3,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import enum
-from sqlite3 import paramstyle
-from subprocess import IDLE_PRIORITY_CLASS
 from saleae.analyzers import HighLevelAnalyzer, AnalyzerFrame
 
 class Hla(HighLevelAnalyzer):
