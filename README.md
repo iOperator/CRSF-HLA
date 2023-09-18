@@ -17,11 +17,16 @@ This is still a very early release. Currently the following frames are supported
 
 * Link statistics (0x14)
 * RC channels packed (0x16)
+* CRC check
+* Destination device address
 
 The decoder features a state machine that parses all frames so it can easily be extended to decode future frames.  
 Some groundwork for additional frames already exists.
 
 ## ToDo ☝️
 
-* CRC check
 * Additional supported frames
+* add check for aync serial
+* pass parameters like address , len and all for all frames
+* implement search for packet feature 
+* add drop down for units in selection (ms or raw digital value)
