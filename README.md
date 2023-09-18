@@ -28,5 +28,5 @@ Some groundwork for additional frames already exists.
 * Additional supported frames
 * add check for aync serial
 * pass parameters like address , len and all for all frames
-* implement search for packet feature 
+* implement search for packet feature
 * add drop down for units in selection (ms or raw digital value)

@@ -108,7 +108,7 @@ class Hla(HighLevelAnalyzer):
             self.crsf_frame_length = payload
             self.dec_fsm = self.dec_fsm_e.Type
             return AnalyzerFrame('crsf_length_byte', frame.start_time, frame.end_time, {
-                'length': str(payload - 1)
+                'length': str(payload)
             })
 
         # Type
