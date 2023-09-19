@@ -118,13 +118,20 @@ class Hla(HighLevelAnalyzer):
         # Type
         if self.dec_fsm == self.dec_fsm_e.Type:
             payload = int.from_bytes(frame.data['data'], byteorder='little')
-            print('Type: {}'.format(self.frame_types[payload]))
             self.crsf_frame_type = payload
             self.dec_fsm = self.dec_fsm_e.Payload
             self.crsf_frame_current_index += 1
-            return AnalyzerFrame('crsf_type_byte', frame.start_time, frame.end_time, {
-                'type': self.frame_types[payload]
-            })
+            if payload in self.frame_types.keys():
+                print('Type: {}'.format(self.frame_types[payload]))
+                return AnalyzerFrame('crsf_type_byte', frame.start_time, frame.end_time, {
+                    'type': self.frame_types[payload]
+                })
+            else:
+                print('Type: Unrecognised')
+                return AnalyzerFrame('crsf_type_byte', frame.start_time, frame.end_time, {
+                    'type': "Unrecognised",
+                    'error': "Unrecognised type"
+                })
 
         # Payload
         if self.dec_fsm == self.dec_fsm_e.Payload:
@@ -148,7 +155,9 @@ class Hla(HighLevelAnalyzer):
                 self.crsf_frame_current_index += 1
                 self.crsf_payload_end = frame.end_time
                 if self.crsf_frame_type == 0x08:  # Battery sensor
-                    pass
+                    analyzerframe = AnalyzerFrame('crsf_payload', self.crsf_payload_start, self.crsf_payload_end, {
+                        'payload': "Battery Sensor (not yet implemented)"
+                    })
                     # ToDo
                     # 2 bytes - Voltage (mV * 100)
                     # 2 bytes - Current (mA * 100)
@@ -179,7 +188,9 @@ class Hla(HighLevelAnalyzer):
                         'payload': payload_str
                     })
                 elif self.crsf_frame_type == 0x10:  # OpenTX sync
-                    pass
+                    analyzerframe = AnalyzerFrame('crsf_payload', self.crsf_payload_start, self.crsf_payload_end, {
+                        'payload': "Open Tx sync packet not yet implemented"
+                    })
                     # ToDo
                     # 4 bytes - Adjusted Refresh Rate
                     # 4 bytes - Last Update
@@ -233,6 +244,10 @@ class Hla(HighLevelAnalyzer):
                     analyzerframe = AnalyzerFrame('crsf_payload', self.crsf_payload_start, self.crsf_payload_end, {
                         'payload': payload_str
                     })
+                else:  # unrecognised Packet type
+                    analyzerframe = AnalyzerFrame('crsf_payload', self.crsf_payload_start, self.crsf_payload_end, {
+                        'payload': "Error in Type of Packet or not CRSF or not implemented",
+                        'error': "couldn't decode packet"})
 
                 return analyzerframe
             elif self.crsf_frame_current_index == (self.crsf_frame_length - 1):
@@ -251,7 +266,8 @@ class Hla(HighLevelAnalyzer):
                 else:
                     crcresult = "Fail"
                 analyzerframe = AnalyzerFrame('crsf_CRC', frame.start_time, frame.end_time, {
-                    'crccheck': f"{crcresult}"
+                    'crccheck': f"{crcresult}",
+                    'error': f'''{"CRC Fail" if crcresult !=0 else ""}'''
                 })
 
                 # And initialize again for next frame
