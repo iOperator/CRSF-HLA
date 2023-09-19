@@ -61,7 +61,8 @@ class Hla(HighLevelAnalyzer):
         0x80: 'Arduipilot respond'
     }  # Extended Header Frames, range: 0x28 to 0x96
 
-    # toDo
+
+    #https://github.com/ExpressLRS/ExpressLRS/blob/master/src/lib/CrsfProtocol/crsf_protocol.h#L108
     # Make a dictionary containing packet lengths offrame types
     frame_types_sizes = {
         0x02: (15, 15),
@@ -73,10 +74,21 @@ class Hla(HighLevelAnalyzer):
         0x21: (16, 16)
     }
     # Protocol defines
+    #https://github.com/ExpressLRS/ExpressLRS/blob/master/src/lib/CrsfProtocol/crsf_protocol.h#L119
     CRSF_SYNC_BYTE = {b'\xc8': 'Flight Controller',
                       b'\xea': 'Radio Transmitter',
                       b'\xee': 'CRSF Transmitter',
-                      b'\xec': 'CRSF Receiver'}
+                      b'\xec': 'CRSF Receiver',
+                      b'\x00': 'CRSF Broadcast',
+                      b'\xc0': 'Current sensor',
+                      b'\xc2': 'GPS',
+                      b'\xcc': 'Race Tag',
+                      b'\xEF': 'ELRS LUA',
+                      b'\x10': 'USB',
+                      b'\xc4': 'TBS Black Box',
+                      b'\x80': 'TBS CORE PNP PRO',
+                      b'\x8A': 'Reserved 1',
+                      b'\xCA': 'Reserved 2'}
 
     # Settings:
     channel_unit_options = ['ms', 'Digital Value', 'Both']
