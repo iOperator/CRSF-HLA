@@ -16,7 +16,7 @@ class Hla(HighLevelAnalyzer):
             'format': 'Length: {{data.length}}'
         },
         'crsf_type_byte': {
-            'format': 'Type: {{data.type}}'
+            'format': 'Type: {{data.type}} ({{data.error}})'
         },
         'crsf_payload': {
             'format': 'Payload: {{data.payload}}'
@@ -48,10 +48,30 @@ class Hla(HighLevelAnalyzer):
         0x28: 'Ping devices',
         0x29: 'Device info',
         0x2A: 'Request settings',
+        0x2B: 'Parameter settings entry',
+        0x2C: 'Parameter Read',
+        0x2D: 'Parameter Write',
         0x32: 'Command',
-        0x3A: 'Radio',
-    }
+        0x3A: 'Radio id',
+        0x78: 'KISS request',
+        0x79: 'KISS respond',
+        0x7A: 'MSP request',
+        0x7B: 'MSP respond',
+        0x7C: 'MSP Write',
+        0x80: 'Arduipilot respond'
+    }  # Extended Header Frames, range: 0x28 to 0x96
 
+    # toDo
+    # Make a dictionary containing packet lengths offrame types
+    frame_types_sizes = {
+        0x02: (15, 15),
+        0x07: (2, 2),
+        0x08: (8, 8),
+        0x09: (4, 4),
+        0x1E: (6, 6),
+        0x29: (48, 48),
+        0x21: (16, 16)
+    }
     # Protocol defines
     CRSF_SYNC_BYTE = {b'\xc8': 'Flight Controller',
                       b'\xea': 'Radio Transmitter',
@@ -121,10 +141,17 @@ class Hla(HighLevelAnalyzer):
             self.crsf_frame_type = payload
             self.dec_fsm = self.dec_fsm_e.Payload
             self.crsf_frame_current_index += 1
+            min = 0
+            max = 100  # setting to be greater than max payload size
+            if self.crsf_frame_type in self.frame_types_sizes.keys():
+                # if min max size defined then match length
+                min, max = self.frame_types_sizes[self.crsf_frame_type]
+
             if payload in self.frame_types.keys():
                 print('Type: {}'.format(self.frame_types[payload]))
                 return AnalyzerFrame('crsf_type_byte', frame.start_time, frame.end_time, {
-                    'type': self.frame_types[payload]
+                    'type': self.frame_types[payload],
+                    'error': f"{f'''Length doesn't correspond to type'''if not min<= self.crsf_frame_length -2 <=max else ''}"
                 })
             else:
                 print('Type: Unrecognised')
@@ -155,14 +182,23 @@ class Hla(HighLevelAnalyzer):
                 self.crsf_frame_current_index += 1
                 self.crsf_payload_end = frame.end_time
                 if self.crsf_frame_type == 0x08:  # Battery sensor
-                    analyzerframe = AnalyzerFrame('crsf_payload', self.crsf_payload_start, self.crsf_payload_end, {
-                        'payload': "Battery Sensor (not yet implemented)"
-                    })
-                    # ToDo
-                    # 2 bytes - Voltage (mV * 100)
+                    bin_str = ''
+                    for i in self.crsf_payload:
+                        # Format as bits and reverse order
+                        bin_str += format(i, '08b')[::-1]
+                    print(bin_str)
+                    # 2 bytes - Voltage (mV * 100) BigEndian
+                    Voltage = float(bin_str[0:16][::-1])
                     # 2 bytes - Current (mA * 100)
+                    Current = float(bin_str[16:32][::-1])
                     # 3 bytes - Capacity (mAh)
+                    Capacity = float(bin_str[32:56][::-1])
                     # 1 byte  - Remaining (%)
+                    Battery_percentage = float(bin_str[56:64][::-1])
+                    payload_str = f"Voltage: {'%.2f' % Voltage} ,Current: {'%.2f' % Current} ,Capacity: {'%.2f' % Capacity} ,Battery %: {'%.2f' % Battery_percentage}"
+                    analyzerframe = AnalyzerFrame('crsf_payload', self.crsf_payload_start, self.crsf_payload_end, {
+                        'payload': payload_str
+                    })
                 elif self.crsf_frame_type == 0x14:  # Link statistics
                     payload_signed = self.crsf_payload.copy()
                     # Uplink SNR and ...
@@ -263,11 +299,13 @@ class Hla(HighLevelAnalyzer):
                                         bytes=len(self.crsf_payload))
                 if crcresult == 0:
                     crcresult = 'Pass'
+                    error = ""
                 else:
                     crcresult = "Fail"
+                    error = "CRC Fail"
                 analyzerframe = AnalyzerFrame('crsf_CRC', frame.start_time, frame.end_time, {
                     'crccheck': f"{crcresult}",
-                    'error': f'''{"CRC Fail" if crcresult !=0 else ""}'''
+                    'error': f"{error}"
                 })
 
                 # And initialize again for next frame
