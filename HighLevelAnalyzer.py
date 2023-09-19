@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import enum
-from saleae.analyzers import HighLevelAnalyzer, AnalyzerFrame
+from saleae.analyzers import HighLevelAnalyzer, AnalyzerFrame, StringSetting, NumberSetting, ChoicesSetting
 
 
 class Hla(HighLevelAnalyzer):
@@ -58,6 +58,10 @@ class Hla(HighLevelAnalyzer):
                       b'\xee': 'CRSF Transmitter',
                       b'\xec': 'CRSF Receiver'}
 
+    # Settings:
+    channel_unit_options = ['ms', 'Digital Value', 'Both']
+    channel_unit = ChoicesSetting(channel_unit_options)
+
     def __init__(self):
         '''
         Initializes the CRFS HLA.
@@ -75,7 +79,7 @@ class Hla(HighLevelAnalyzer):
         self.crsf_payload_start = None
         self.crsf_payload_end = None  # Timestamp: End of payload
 
-        print("Initialized CRSF HLA.")
+        # print("Initialized CRSF HLA.")
 
     def unsigned_to_signed_8(self, x):
         '''
@@ -200,13 +204,31 @@ class Hla(HighLevelAnalyzer):
                         value = int(bin_str[0 + 11 * i: 11 + 11 * i][::-1], 2)
                         # Converted to milliseconds
                         value_ms = int((value * 1024 / 1639) + 881)
-                        channels.append(value)
-                        channels.append(value_ms)
-                    print(channels)
-                    payload_str = ('CH1: {} ({} ms), CH2: {} ({} ms), CH3: {} ({} ms), CH4: {} ({} ms), ' +
-                                   'CH5: {} ({} ms), CH6: {} ({} ms), CH7: {} ({} ms), CH8: {} ({} ms), ' +
-                                   'CH9: {} ({} ms), CH10: {} ({} ms), CH11: {} ({} ms), CH12: {} ({} ms), ' +
-                                   'CH13: {} ({} ms), CH14: {} ({} ms), CH15: {} ({} ms), CH16: {} ({} ms)').format(*channels)
+                        if self.channel_unit in self.channel_unit_options:
+                            if self.channel_unit == 'ms':
+                                channels.append(value_ms)
+                            elif self.channel_unit == 'Digital Value':
+                                channels.append(value)
+                            else:
+                                channels.append(value)
+                                channels.append(value_ms)
+                    # print(channels)
+                    if self.channel_unit in self.channel_unit_options:
+                        if self.channel_unit == 'ms':
+                            payload_str = ('CH1: {} ms, CH2: {} ms, CH3: {} ms, CH4: {} ms, ' +
+                                           'CH5: {} ms, CH6: {} ms, CH7: {} ms, CH8: {} ms, ' +
+                                           'CH9: {} ms, CH10: {} ms, CH11: {} ms, CH12: {} ms, ' +
+                                           'CH13: {} ms, CH14: {} ms, CH15: {} ms, CH16: {} ms').format(*channels)
+                        elif self.channel_unit == 'Digital Value':
+                            payload_str = ('CH1: {} , CH2: {} , CH3: {} , CH4: {} , ' +
+                                           'CH5: {} , CH6: {} , CH7: {} , CH8: {} , ' +
+                                           'CH9: {} , CH10: {} , CH11: {} , CH12: {} , ' +
+                                           'CH13: {} , CH14: {} , CH15: {} , CH16: {} ').format(*channels)
+                        else:
+                            payload_str = ('CH1: {} ({} ms), CH2: {} ({} ms), CH3: {} ({} ms), CH4: {} ({} ms), ' +
+                                           'CH5: {} ({} ms), CH6: {} ({} ms), CH7: {} ({} ms), CH8: {} ({} ms), ' +
+                                           'CH9: {} ({} ms), CH10: {} ({} ms), CH11: {} ({} ms), CH12: {} ({} ms), ' +
+                                           'CH13: {} ({} ms), CH14: {} ({} ms), CH15: {} ({} ms), CH16: {} ({} ms)').format(*channels)
                     print(payload_str)
                     analyzerframe = AnalyzerFrame('crsf_payload', self.crsf_payload_start, self.crsf_payload_end, {
                         'payload': payload_str
@@ -242,7 +264,6 @@ class Hla(HighLevelAnalyzer):
                 self.crsf_payload = []
                 self.crsf_payload_start = None
                 self.crsf_payload_end = None
-
                 return analyzerframe
 
     def calCRC(self, packet: list, bytes: int, gen_poly: int = 0xd5, start_from_byte=0):
