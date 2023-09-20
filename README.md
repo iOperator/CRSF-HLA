@@ -18,6 +18,7 @@ This is still a very early release. Currently the following frames are supported
 * Link statistics (0x14)
 * RC channels packed (0x16)
 * Battery Packet (0x08)
+* Flight Mode (0x21)
 
 It currently Contains the following features:
 

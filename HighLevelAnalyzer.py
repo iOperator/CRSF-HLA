@@ -61,8 +61,7 @@ class Hla(HighLevelAnalyzer):
         0x80: 'Arduipilot respond'
     }  # Extended Header Frames, range: 0x28 to 0x96
 
-
-    #https://github.com/ExpressLRS/ExpressLRS/blob/master/src/lib/CrsfProtocol/crsf_protocol.h#L108
+    # https://github.com/ExpressLRS/ExpressLRS/blob/master/src/lib/CrsfProtocol/crsf_protocol.h#L108
     # Make a dictionary containing packet lengths offrame types
     frame_types_sizes = {
         0x02: (15, 15),
@@ -71,10 +70,10 @@ class Hla(HighLevelAnalyzer):
         0x09: (4, 4),
         0x1E: (6, 6),
         0x29: (48, 48),
-        0x21: (16, 16)
+        0x21: (4, 16)
     }
     # Protocol defines
-    #https://github.com/ExpressLRS/ExpressLRS/blob/master/src/lib/CrsfProtocol/crsf_protocol.h#L119
+    # https://github.com/ExpressLRS/ExpressLRS/blob/master/src/lib/CrsfProtocol/crsf_protocol.h#L119
     CRSF_SYNC_BYTE = {b'\xc8': 'Flight Controller',
                       b'\xea': 'Radio Transmitter',
                       b'\xee': 'CRSF Transmitter',
@@ -98,7 +97,7 @@ class Hla(HighLevelAnalyzer):
         '''
         Initializes the CRFS HLA.
         '''
-
+        self.crsf_packet_start = None
         self.crsf_frame_start = None  # Timestamp: Start of frame
         self.crsf_frame_end = None  # Timestamp: End of frame
         self.dec_fsm = self.dec_fsm_e.Idle  # Current state of protocol decoder FSM
@@ -132,6 +131,8 @@ class Hla(HighLevelAnalyzer):
         if self.crsf_frame_start == None and frame.data['data'] in self.CRSF_SYNC_BYTE.keys() and self.dec_fsm == self.dec_fsm_e.Idle:
             print('Sync byte detected.')
             self.crsf_frame_start = frame.start_time
+            self.crsf_packet_start = frame.start_time
+            self.crsf_packet_time = frame.end_time - frame.start_time
             self.dec_fsm = self.dec_fsm_e.Length
             dest = self.CRSF_SYNC_BYTE[frame.data['data']]
             return AnalyzerFrame('crsf_sync_byte', frame.start_time, frame.end_time, {'address': f"{format(int.from_bytes(frame.data['data'] ,byteorder='little'),'#X')}",
@@ -174,6 +175,11 @@ class Hla(HighLevelAnalyzer):
 
         # Payload
         if self.dec_fsm == self.dec_fsm_e.Payload:
+
+            # to do
+            # implement time out of some sort
+            # maybe we compare bytes received with time passed
+
             payload = int.from_bytes(frame.data['data'], byteorder='little')
 
             if self.crsf_frame_current_index == 1:  # First payload byte
@@ -250,6 +256,15 @@ class Hla(HighLevelAnalyzer):
                     # 1 byte  - Downlink RSSI
                     # 1 byte  - Downlink Link Quality
                     # 1 byte (signed) Downling SNR
+                elif self.crsf_frame_type == 0x21:
+                    # flight mode
+                    # max 16 bytes
+                    # Format: String = [ACRO , WAIT , !FS! , RTH , MANU , STAB , HOR , AIR , !ERR] + *(if disarmed) + \0
+                    # eg: AIR* -> Air mode and disarmed
+                    # https://github.dev/betaflight/betaflight#L379
+                    return AnalyzerFrame('crsf_payload', self.crsf_payload_start, self.crsf_payload_end, {
+                        'payload': 'Flight Mode: ' + ''.join([chr(i) for i in self.crsf_payload]) + f'''{"  ( disarmed )" if chr(self.crsf_payload[-2]) == '*' else "( Armed )"}''',
+                        'error': ""})
                 elif self.crsf_frame_type == 0x16:  # RC channels packed
                     # 11 bits per channel, 16 channels, 176 bits (22 bytes) total
                     bin_str = ''
@@ -300,7 +315,6 @@ class Hla(HighLevelAnalyzer):
                 return analyzerframe
             elif self.crsf_frame_current_index == (self.crsf_frame_length - 1):
                 # Last byte is actually the CRC.
-
                 analyzerframe = None
                 self.crsf_payload.append(payload)
                 #print('Payload complete ({}): {:2x}'.format(self.crsf_frame_current_index, payload))
