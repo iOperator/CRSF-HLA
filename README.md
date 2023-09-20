@@ -17,8 +17,9 @@ This is still a very early release. Currently the following frames are supported
 
 * Link statistics (0x14)
 * RC channels packed (0x16)
-* Battery Packet (0x08)
+* Battery Sensor Packet (0x08)
 * Flight Mode (0x21)
+* Gps Packet (0x02)(Experimental need testers)
 
 It currently Contains the following features:
 
@@ -26,6 +27,7 @@ It currently Contains the following features:
 * Destination device address
 * Selectable Channel value units
 * payload length check for different packets
+* some basic error handling
 
 The decoder features a state machine that parses all frames so it can easily be extended to decode future frames.  
 Some groundwork for additional frames already exists.

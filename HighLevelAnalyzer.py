@@ -136,21 +136,33 @@ class Hla(HighLevelAnalyzer):
                 self.dec_fsm = self.dec_fsm_e.Length
                 dest = self.CRSF_SYNC_BYTE[frame.data['data']]
                 return AnalyzerFrame('crsf_sync_byte', frame.start_time, frame.end_time, {'address': f"{format(int.from_bytes(frame.data['data'] ,byteorder='little'),'#X')}",
-                                                                                        'destination': f"{dest}"})
+                                                                                          'destination': f"{dest}"})
 
             # Length
             if self.dec_fsm == self.dec_fsm_e.Length:
-                payload = int.from_bytes(frame.data['data'], byteorder='little')
+                payload = int.from_bytes(
+                    frame.data['data'], byteorder='little')
                 print('Length: {} bytes'.format(payload - 1))
                 self.crsf_frame_length = payload
                 self.dec_fsm = self.dec_fsm_e.Type
+                if self.crsf_frame_length < 2:  # error handling
+                    self.crsf_frame_start = None
+                    self.crsf_frame_end = None
+                    self.dec_fsm = self.dec_fsm_e.Idle
+                    self.crsf_frame_length = 0
+                    self.crsf_frame_type = None
+                    self.crsf_frame_current_index = 0
+                    self.crsf_payload = []
+                    self.crsf_payload_start = None
+                    self.crsf_payload_end = None
                 return AnalyzerFrame('crsf_length_byte', frame.start_time, frame.end_time, {
                     'length': str(payload)
                 })
 
             # Type
             if self.dec_fsm == self.dec_fsm_e.Type:
-                payload = int.from_bytes(frame.data['data'], byteorder='little')
+                payload = int.from_bytes(
+                    frame.data['data'], byteorder='little')
                 self.crsf_frame_type = payload
                 self.dec_fsm = self.dec_fsm_e.Payload
                 self.crsf_frame_current_index += 1
@@ -179,8 +191,10 @@ class Hla(HighLevelAnalyzer):
                 # to do
                 # implement time out of some sort
                 # maybe we compare bytes received with time passed
+                # CRSF is BIG Endian
 
-                payload = int.from_bytes(frame.data['data'], byteorder='little')
+                payload = int.from_bytes(
+                    frame.data['data'], byteorder='little')
 
                 if self.crsf_frame_current_index == 1:  # First payload byte
                     self.crsf_payload_start = frame.start_time
@@ -200,15 +214,16 @@ class Hla(HighLevelAnalyzer):
                     self.crsf_frame_current_index += 1
                     self.crsf_payload_end = frame.end_time
                     if self.crsf_frame_type == 0x08:  # Battery sensor
+                        # https://github.com/betaflight/betaflight/blob/master/src/main/telemetry/crsf.c#L260
                         bin_str = ''
                         for i in self.crsf_payload:
                             # Format as bits and reverse order
                             bin_str += format(i, '08b')[::-1]
-                        print(bin_str)
+                        # print(bin_str)
                         # 2 bytes - Voltage (mV * 100) BigEndian
-                        Voltage = float(bin_str[0:16][::-1])
+                        Voltage = float(bin_str[0:16][::-1])*100
                         # 2 bytes - Current (mA * 100)
-                        Current = float(bin_str[16:32][::-1])
+                        Current = float(bin_str[16:32][::-1])*100
                         # 3 bytes - Capacity (mAh)
                         Capacity = float(bin_str[32:56][::-1])
                         # 1 byte  - Remaining (%)
@@ -218,6 +233,7 @@ class Hla(HighLevelAnalyzer):
                             'payload': payload_str
                         })
                     elif self.crsf_frame_type == 0x14:  # Link statistics
+                        # https://github.com/ExpressLRS/ExpressLRS/blob/master/src/lib/CrsfProtocol/crsf_protocol.h#L312
                         payload_signed = self.crsf_payload.copy()
                         # Uplink SNR and ...
                         payload_signed[3] = self.unsigned_to_signed_8(
@@ -227,15 +243,15 @@ class Hla(HighLevelAnalyzer):
                             payload_signed[9])
                         # One byte per entry...
                         payload_str = ('Uplink RSSI 1: -{}dB, ' +
-                                    'Uplink RSSI 2: -{}dB, ' +
-                                    'Uplink Link Quality: {}%, ' +
-                                    'Uplink SNR: {}dB, ' +
-                                    'Active Antenna: {}, ' +
-                                    'RF Mode: {}, ' +
-                                    'Uplink TX Power: {} mW, ' +
-                                    'Downlink RSSI: -{}dB, ' +
-                                    'Downlink Link Quality: {}%, ' +
-                                    'Downlink SNR: {}dB').format(*payload_signed)
+                                       'Uplink RSSI 2: -{}dB, ' +
+                                       'Uplink Link Quality: {}%, ' +
+                                       'Uplink SNR: {}dB, ' +
+                                       'Active Antenna: {}, ' +
+                                       'RF Mode: {}, ' +
+                                       'Uplink TX Power: {} mW, ' +
+                                       'Downlink RSSI: -{}dB, ' +
+                                       'Downlink Link Quality: {}%, ' +
+                                       'Downlink SNR: {}dB').format(*payload_signed)
                         print(payload_signed)
                         print(payload_str)
                         analyzerframe = AnalyzerFrame('crsf_payload', self.crsf_payload_start, self.crsf_payload_end, {
@@ -256,16 +272,42 @@ class Hla(HighLevelAnalyzer):
                         # 1 byte  - Downlink RSSI
                         # 1 byte  - Downlink Link Quality
                         # 1 byte (signed) Downling SNR
-                    elif self.crsf_frame_type == 0x21:
-                        # flight mode
+                    elif self.crsf_frame_type == 0x21:                         # flight mode
                         # max 16 bytes
                         # Format: String = [ACRO , WAIT , !FS! , RTH , MANU , STAB , HOR , AIR , !ERR] + *(if disarmed) + \0
                         # eg: AIR* -> Air mode and disarmed
-                        # https://github.dev/betaflight/betaflight#L379
+                        # https://github.com/betaflight/betaflight/blob/master/src/main/telemetry/crsf.c#L367
                         return AnalyzerFrame('crsf_payload', self.crsf_payload_start, self.crsf_payload_end, {
                             'payload': 'Flight Mode: ' + ''.join([chr(i) for i in self.crsf_payload]) + f'''{"  ( disarmed )" if chr(self.crsf_payload[-2]) == '*' else "( Armed )"}''',
                             'error': ""})
+                    elif self.crsf_frame_type == 0x02:  # GPS
+                        # https://github.com/betaflight/betaflight/blob/master/src/main/telemetry/crsf.c#237
+                        # Payload:
+                        # int32_t     Latitude ( degree / 10`000`000 )
+                        # int32_t     Longitude (degree / 10`000`000 )
+                        # uint16_t    Groundspeed ( km/h / 10 )
+                        # uint16_t    GPS heading ( degree / 100 )
+                        # uint16      Altitude ( meter ­1000m offset )
+                        # uint8_t     Satellites in use ( counter )
+                        # todo
+
+                        # Convert to signed
+                        bin_str = ''
+                        for i in self.crsf_payload:
+                            # Format as bits and reverse order
+                            bin_str += format(i, '08b')[::-1]
+                        latitude = bin_str[0:4][::-1]
+                        longitude = bin_str[4:8][::-1]
+                        groundspeed = bin_str[8:10][::-1]
+                        gps_heading = bin_str[10:12][::-1]
+                        gps_altitude = bin_str[12:14][::-1]
+                        satellities = bin_str[14][::-1]
+                        return AnalyzerFrame('crsf_payload', self.crsf_payload_start, self.crsf_payload_end, {
+                            'payload': f'Latitude (degrees): {latitude} ,Longitude (degrees): {longitude} ,Ground Speed (Km/h): {groundspeed} , Gps Heading (Degree): {gps_heading} ,Gps altitude(1000 m offset): {gps_altitude} ,Satellites :{satellities}',
+                            'error': "development pending"})
                     elif self.crsf_frame_type == 0x16:  # RC channels packed
+                        # https://github.com/betaflight/betaflight/blob/master/src/main/rx/crsf.c#L481
+                        # https://github.com/betaflight/betaflight/blob/master/src/main/rx/crsf.c#L109
                         # 11 bits per channel, 16 channels, 176 bits (22 bytes) total
                         bin_str = ''
                         channels = []
@@ -275,7 +317,8 @@ class Hla(HighLevelAnalyzer):
                         print(bin_str)
                         for i in range(16):
                             # 'RC' value
-                            value = int(bin_str[0 + 11 * i: 11 + 11 * i][::-1], 2)
+                            value = int(
+                                bin_str[0 + 11 * i: 11 + 11 * i][::-1], 2)
                             # Converted to milliseconds
                             value_ms = int((value * 1024 / 1639) + 881)
                             if self.channel_unit in self.channel_unit_options:
@@ -290,19 +333,19 @@ class Hla(HighLevelAnalyzer):
                         if self.channel_unit in self.channel_unit_options:
                             if self.channel_unit == 'ms':
                                 payload_str = ('CH1: {} ms, CH2: {} ms, CH3: {} ms, CH4: {} ms, ' +
-                                            'CH5: {} ms, CH6: {} ms, CH7: {} ms, CH8: {} ms, ' +
-                                            'CH9: {} ms, CH10: {} ms, CH11: {} ms, CH12: {} ms, ' +
-                                            'CH13: {} ms, CH14: {} ms, CH15: {} ms, CH16: {} ms').format(*channels)
+                                               'CH5: {} ms, CH6: {} ms, CH7: {} ms, CH8: {} ms, ' +
+                                               'CH9: {} ms, CH10: {} ms, CH11: {} ms, CH12: {} ms, ' +
+                                               'CH13: {} ms, CH14: {} ms, CH15: {} ms, CH16: {} ms').format(*channels)
                             elif self.channel_unit == 'Digital Value':
                                 payload_str = ('CH1: {} , CH2: {} , CH3: {} , CH4: {} , ' +
-                                            'CH5: {} , CH6: {} , CH7: {} , CH8: {} , ' +
-                                            'CH9: {} , CH10: {} , CH11: {} , CH12: {} , ' +
-                                            'CH13: {} , CH14: {} , CH15: {} , CH16: {} ').format(*channels)
+                                               'CH5: {} , CH6: {} , CH7: {} , CH8: {} , ' +
+                                               'CH9: {} , CH10: {} , CH11: {} , CH12: {} , ' +
+                                               'CH13: {} , CH14: {} , CH15: {} , CH16: {} ').format(*channels)
                             else:
                                 payload_str = ('CH1: {} ({} ms), CH2: {} ({} ms), CH3: {} ({} ms), CH4: {} ({} ms), ' +
-                                            'CH5: {} ({} ms), CH6: {} ({} ms), CH7: {} ({} ms), CH8: {} ({} ms), ' +
-                                            'CH9: {} ({} ms), CH10: {} ({} ms), CH11: {} ({} ms), CH12: {} ({} ms), ' +
-                                            'CH13: {} ({} ms), CH14: {} ({} ms), CH15: {} ({} ms), CH16: {} ({} ms)').format(*channels)
+                                               'CH5: {} ({} ms), CH6: {} ({} ms), CH7: {} ({} ms), CH8: {} ({} ms), ' +
+                                               'CH9: {} ({} ms), CH10: {} ({} ms), CH11: {} ({} ms), CH12: {} ({} ms), ' +
+                                               'CH13: {} ({} ms), CH14: {} ({} ms), CH15: {} ({} ms), CH16: {} ({} ms)').format(*channels)
                         print(payload_str)
                         analyzerframe = AnalyzerFrame('crsf_payload', self.crsf_payload_start, self.crsf_payload_end, {
                             'payload': payload_str
@@ -356,7 +399,6 @@ class Hla(HighLevelAnalyzer):
             self.crsf_payload = []
             self.crsf_payload_start = None
             self.crsf_payload_end = None
-
 
     def calCRC(self, packet: list, bytes: int, gen_poly: int = 0xd5, start_from_byte=0):
         '''
