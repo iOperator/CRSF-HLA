@@ -126,225 +126,237 @@ class Hla(HighLevelAnalyzer):
 
         Feed it with async analyzer frames. :)
         '''
+        try:
+            # New frame
+            if self.crsf_frame_start == None and frame.data['data'] in self.CRSF_SYNC_BYTE.keys() and self.dec_fsm == self.dec_fsm_e.Idle:
+                print('Sync byte detected.')
+                self.crsf_frame_start = frame.start_time
+                self.crsf_packet_start = frame.start_time
+                self.crsf_packet_time = frame.end_time - frame.start_time
+                self.dec_fsm = self.dec_fsm_e.Length
+                dest = self.CRSF_SYNC_BYTE[frame.data['data']]
+                return AnalyzerFrame('crsf_sync_byte', frame.start_time, frame.end_time, {'address': f"{format(int.from_bytes(frame.data['data'] ,byteorder='little'),'#X')}",
+                                                                                        'destination': f"{dest}"})
 
-        # New frame
-        if self.crsf_frame_start == None and frame.data['data'] in self.CRSF_SYNC_BYTE.keys() and self.dec_fsm == self.dec_fsm_e.Idle:
-            print('Sync byte detected.')
-            self.crsf_frame_start = frame.start_time
-            self.crsf_packet_start = frame.start_time
-            self.crsf_packet_time = frame.end_time - frame.start_time
-            self.dec_fsm = self.dec_fsm_e.Length
-            dest = self.CRSF_SYNC_BYTE[frame.data['data']]
-            return AnalyzerFrame('crsf_sync_byte', frame.start_time, frame.end_time, {'address': f"{format(int.from_bytes(frame.data['data'] ,byteorder='little'),'#X')}",
-                                                                                      'destination': f"{dest}"})
-
-        # Length
-        if self.dec_fsm == self.dec_fsm_e.Length:
-            payload = int.from_bytes(frame.data['data'], byteorder='little')
-            print('Length: {} bytes'.format(payload - 1))
-            self.crsf_frame_length = payload
-            self.dec_fsm = self.dec_fsm_e.Type
-            return AnalyzerFrame('crsf_length_byte', frame.start_time, frame.end_time, {
-                'length': str(payload)
-            })
-
-        # Type
-        if self.dec_fsm == self.dec_fsm_e.Type:
-            payload = int.from_bytes(frame.data['data'], byteorder='little')
-            self.crsf_frame_type = payload
-            self.dec_fsm = self.dec_fsm_e.Payload
-            self.crsf_frame_current_index += 1
-            min = 0
-            max = 100  # setting to be greater than max payload size
-            if self.crsf_frame_type in self.frame_types_sizes.keys():
-                # if min max size defined then match length
-                min, max = self.frame_types_sizes[self.crsf_frame_type]
-
-            if payload in self.frame_types.keys():
-                print('Type: {}'.format(self.frame_types[payload]))
-                return AnalyzerFrame('crsf_type_byte', frame.start_time, frame.end_time, {
-                    'type': self.frame_types[payload],
-                    'error': f"{f'''Length doesn't correspond to type'''if not min<= self.crsf_frame_length -2 <=max else ''}"
-                })
-            else:
-                print('Type: Unrecognised')
-                return AnalyzerFrame('crsf_type_byte', frame.start_time, frame.end_time, {
-                    'type': "Unrecognised",
-                    'error': "Unrecognised type"
+            # Length
+            if self.dec_fsm == self.dec_fsm_e.Length:
+                payload = int.from_bytes(frame.data['data'], byteorder='little')
+                print('Length: {} bytes'.format(payload - 1))
+                self.crsf_frame_length = payload
+                self.dec_fsm = self.dec_fsm_e.Type
+                return AnalyzerFrame('crsf_length_byte', frame.start_time, frame.end_time, {
+                    'length': str(payload)
                 })
 
-        # Payload
-        if self.dec_fsm == self.dec_fsm_e.Payload:
-
-            # to do
-            # implement time out of some sort
-            # maybe we compare bytes received with time passed
-
-            payload = int.from_bytes(frame.data['data'], byteorder='little')
-
-            if self.crsf_frame_current_index == 1:  # First payload byte
-                self.crsf_payload_start = frame.start_time
-                self.crsf_payload.append(payload)
+            # Type
+            if self.dec_fsm == self.dec_fsm_e.Type:
+                payload = int.from_bytes(frame.data['data'], byteorder='little')
+                self.crsf_frame_type = payload
+                self.dec_fsm = self.dec_fsm_e.Payload
                 self.crsf_frame_current_index += 1
-                #print('Payload start ({}): {:2x}'.format(self.crsf_frame_current_index, payload))
-            # ... still collecting payload bytes ...
-            elif self.crsf_frame_current_index < (self.crsf_frame_length - 2):
-                self.crsf_payload.append(payload)
-                self.crsf_frame_current_index += 1
-                #print('Adding payload ({}): {:2x}'.format(self.crsf_frame_current_index, payload))
+                min = 0
+                max = 100  # setting to be greater than max payload size
+                if self.crsf_frame_type in self.frame_types_sizes.keys():
+                    # if min max size defined then match length
+                    min, max = self.frame_types_sizes[self.crsf_frame_type]
 
-            elif self.crsf_frame_current_index == self.crsf_frame_length - 2:
-                # second last byte received
-                # whole payload received
-                self.crsf_payload.append(payload)
-                self.crsf_frame_current_index += 1
-                self.crsf_payload_end = frame.end_time
-                if self.crsf_frame_type == 0x08:  # Battery sensor
-                    bin_str = ''
-                    for i in self.crsf_payload:
-                        # Format as bits and reverse order
-                        bin_str += format(i, '08b')[::-1]
-                    print(bin_str)
-                    # 2 bytes - Voltage (mV * 100) BigEndian
-                    Voltage = float(bin_str[0:16][::-1])
-                    # 2 bytes - Current (mA * 100)
-                    Current = float(bin_str[16:32][::-1])
-                    # 3 bytes - Capacity (mAh)
-                    Capacity = float(bin_str[32:56][::-1])
-                    # 1 byte  - Remaining (%)
-                    Battery_percentage = float(bin_str[56:64][::-1])
-                    payload_str = f"Voltage: {'%.2f' % Voltage} ,Current: {'%.2f' % Current} ,Capacity: {'%.2f' % Capacity} ,Battery %: {'%.2f' % Battery_percentage}"
-                    analyzerframe = AnalyzerFrame('crsf_payload', self.crsf_payload_start, self.crsf_payload_end, {
-                        'payload': payload_str
+                if payload in self.frame_types.keys():
+                    print('Type: {}'.format(self.frame_types[payload]))
+                    return AnalyzerFrame('crsf_type_byte', frame.start_time, frame.end_time, {
+                        'type': self.frame_types[payload],
+                        'error': f"{f'''Length doesn't correspond to type'''if not min<= self.crsf_frame_length -2 <=max else ''}"
                     })
-                elif self.crsf_frame_type == 0x14:  # Link statistics
-                    payload_signed = self.crsf_payload.copy()
-                    # Uplink SNR and ...
-                    payload_signed[3] = self.unsigned_to_signed_8(
-                        payload_signed[3])
-                    # ... download SNR are signed.
-                    payload_signed[9] = self.unsigned_to_signed_8(
-                        payload_signed[9])
-                    # One byte per entry...
-                    payload_str = ('Uplink RSSI 1: -{}dB, ' +
-                                   'Uplink RSSI 2: -{}dB, ' +
-                                   'Uplink Link Quality: {}%, ' +
-                                   'Uplink SNR: {}dB, ' +
-                                   'Active Antenna: {}, ' +
-                                   'RF Mode: {}, ' +
-                                   'Uplink TX Power: {} mW, ' +
-                                   'Downlink RSSI: -{}dB, ' +
-                                   'Downlink Link Quality: {}%, ' +
-                                   'Downlink SNR: {}dB').format(*payload_signed)
-                    print(payload_signed)
-                    print(payload_str)
-                    analyzerframe = AnalyzerFrame('crsf_payload', self.crsf_payload_start, self.crsf_payload_end, {
-                        'payload': payload_str
+                else:
+                    print('Type: Unrecognised')
+                    return AnalyzerFrame('crsf_type_byte', frame.start_time, frame.end_time, {
+                        'type': "Unrecognised",
+                        'error': "Unrecognised type"
                     })
-                elif self.crsf_frame_type == 0x10:  # OpenTX sync
-                    analyzerframe = AnalyzerFrame('crsf_payload', self.crsf_payload_start, self.crsf_payload_end, {
-                        'payload': "Open Tx sync packet not yet implemented"
-                    })
-                    # ToDo
-                    # 4 bytes - Adjusted Refresh Rate
-                    # 4 bytes - Last Update
-                    # 2 bytes - Refresh Rate
-                    # 1 bytes (signed) - Refresh Rate
-                    # 2 bytes - Input Lag
-                    # 1 byte  - Interval
-                    # 1 byte  - Target
-                    # 1 byte  - Downlink RSSI
-                    # 1 byte  - Downlink Link Quality
-                    # 1 byte (signed) Downling SNR
-                elif self.crsf_frame_type == 0x21:
-                    # flight mode
-                    # max 16 bytes
-                    # Format: String = [ACRO , WAIT , !FS! , RTH , MANU , STAB , HOR , AIR , !ERR] + *(if disarmed) + \0
-                    # eg: AIR* -> Air mode and disarmed
-                    # https://github.dev/betaflight/betaflight#L379
-                    return AnalyzerFrame('crsf_payload', self.crsf_payload_start, self.crsf_payload_end, {
-                        'payload': 'Flight Mode: ' + ''.join([chr(i) for i in self.crsf_payload]) + f'''{"  ( disarmed )" if chr(self.crsf_payload[-2]) == '*' else "( Armed )"}''',
-                        'error': ""})
-                elif self.crsf_frame_type == 0x16:  # RC channels packed
-                    # 11 bits per channel, 16 channels, 176 bits (22 bytes) total
-                    bin_str = ''
-                    channels = []
-                    for i in self.crsf_payload:
-                        # Format as bits and reverse order
-                        bin_str += format(i, '08b')[::-1]
-                    print(bin_str)
-                    for i in range(16):
-                        # 'RC' value
-                        value = int(bin_str[0 + 11 * i: 11 + 11 * i][::-1], 2)
-                        # Converted to milliseconds
-                        value_ms = int((value * 1024 / 1639) + 881)
+
+            # Payload
+            if self.dec_fsm == self.dec_fsm_e.Payload:
+
+                # to do
+                # implement time out of some sort
+                # maybe we compare bytes received with time passed
+
+                payload = int.from_bytes(frame.data['data'], byteorder='little')
+
+                if self.crsf_frame_current_index == 1:  # First payload byte
+                    self.crsf_payload_start = frame.start_time
+                    self.crsf_payload.append(payload)
+                    self.crsf_frame_current_index += 1
+                    #print('Payload start ({}): {:2x}'.format(self.crsf_frame_current_index, payload))
+                # ... still collecting payload bytes ...
+                elif self.crsf_frame_current_index < (self.crsf_frame_length - 2):
+                    self.crsf_payload.append(payload)
+                    self.crsf_frame_current_index += 1
+                    #print('Adding payload ({}): {:2x}'.format(self.crsf_frame_current_index, payload))
+
+                elif self.crsf_frame_current_index == self.crsf_frame_length - 2:
+                    # second last byte received
+                    # whole payload received
+                    self.crsf_payload.append(payload)
+                    self.crsf_frame_current_index += 1
+                    self.crsf_payload_end = frame.end_time
+                    if self.crsf_frame_type == 0x08:  # Battery sensor
+                        bin_str = ''
+                        for i in self.crsf_payload:
+                            # Format as bits and reverse order
+                            bin_str += format(i, '08b')[::-1]
+                        print(bin_str)
+                        # 2 bytes - Voltage (mV * 100) BigEndian
+                        Voltage = float(bin_str[0:16][::-1])
+                        # 2 bytes - Current (mA * 100)
+                        Current = float(bin_str[16:32][::-1])
+                        # 3 bytes - Capacity (mAh)
+                        Capacity = float(bin_str[32:56][::-1])
+                        # 1 byte  - Remaining (%)
+                        Battery_percentage = float(bin_str[56:64][::-1])
+                        payload_str = f"Voltage: {'%.2f' % Voltage} ,Current: {'%.2f' % Current} ,Capacity: {'%.2f' % Capacity} ,Battery %: {'%.2f' % Battery_percentage}"
+                        analyzerframe = AnalyzerFrame('crsf_payload', self.crsf_payload_start, self.crsf_payload_end, {
+                            'payload': payload_str
+                        })
+                    elif self.crsf_frame_type == 0x14:  # Link statistics
+                        payload_signed = self.crsf_payload.copy()
+                        # Uplink SNR and ...
+                        payload_signed[3] = self.unsigned_to_signed_8(
+                            payload_signed[3])
+                        # ... download SNR are signed.
+                        payload_signed[9] = self.unsigned_to_signed_8(
+                            payload_signed[9])
+                        # One byte per entry...
+                        payload_str = ('Uplink RSSI 1: -{}dB, ' +
+                                    'Uplink RSSI 2: -{}dB, ' +
+                                    'Uplink Link Quality: {}%, ' +
+                                    'Uplink SNR: {}dB, ' +
+                                    'Active Antenna: {}, ' +
+                                    'RF Mode: {}, ' +
+                                    'Uplink TX Power: {} mW, ' +
+                                    'Downlink RSSI: -{}dB, ' +
+                                    'Downlink Link Quality: {}%, ' +
+                                    'Downlink SNR: {}dB').format(*payload_signed)
+                        print(payload_signed)
+                        print(payload_str)
+                        analyzerframe = AnalyzerFrame('crsf_payload', self.crsf_payload_start, self.crsf_payload_end, {
+                            'payload': payload_str
+                        })
+                    elif self.crsf_frame_type == 0x10:  # OpenTX sync
+                        analyzerframe = AnalyzerFrame('crsf_payload', self.crsf_payload_start, self.crsf_payload_end, {
+                            'payload': "Open Tx sync packet not yet implemented"
+                        })
+                        # ToDo
+                        # 4 bytes - Adjusted Refresh Rate
+                        # 4 bytes - Last Update
+                        # 2 bytes - Refresh Rate
+                        # 1 bytes (signed) - Refresh Rate
+                        # 2 bytes - Input Lag
+                        # 1 byte  - Interval
+                        # 1 byte  - Target
+                        # 1 byte  - Downlink RSSI
+                        # 1 byte  - Downlink Link Quality
+                        # 1 byte (signed) Downling SNR
+                    elif self.crsf_frame_type == 0x21:
+                        # flight mode
+                        # max 16 bytes
+                        # Format: String = [ACRO , WAIT , !FS! , RTH , MANU , STAB , HOR , AIR , !ERR] + *(if disarmed) + \0
+                        # eg: AIR* -> Air mode and disarmed
+                        # https://github.dev/betaflight/betaflight#L379
+                        return AnalyzerFrame('crsf_payload', self.crsf_payload_start, self.crsf_payload_end, {
+                            'payload': 'Flight Mode: ' + ''.join([chr(i) for i in self.crsf_payload]) + f'''{"  ( disarmed )" if chr(self.crsf_payload[-2]) == '*' else "( Armed )"}''',
+                            'error': ""})
+                    elif self.crsf_frame_type == 0x16:  # RC channels packed
+                        # 11 bits per channel, 16 channels, 176 bits (22 bytes) total
+                        bin_str = ''
+                        channels = []
+                        for i in self.crsf_payload:
+                            # Format as bits and reverse order
+                            bin_str += format(i, '08b')[::-1]
+                        print(bin_str)
+                        for i in range(16):
+                            # 'RC' value
+                            value = int(bin_str[0 + 11 * i: 11 + 11 * i][::-1], 2)
+                            # Converted to milliseconds
+                            value_ms = int((value * 1024 / 1639) + 881)
+                            if self.channel_unit in self.channel_unit_options:
+                                if self.channel_unit == 'ms':
+                                    channels.append(value_ms)
+                                elif self.channel_unit == 'Digital Value':
+                                    channels.append(value)
+                                else:
+                                    channels.append(value)
+                                    channels.append(value_ms)
+                        # print(channels)
                         if self.channel_unit in self.channel_unit_options:
                             if self.channel_unit == 'ms':
-                                channels.append(value_ms)
+                                payload_str = ('CH1: {} ms, CH2: {} ms, CH3: {} ms, CH4: {} ms, ' +
+                                            'CH5: {} ms, CH6: {} ms, CH7: {} ms, CH8: {} ms, ' +
+                                            'CH9: {} ms, CH10: {} ms, CH11: {} ms, CH12: {} ms, ' +
+                                            'CH13: {} ms, CH14: {} ms, CH15: {} ms, CH16: {} ms').format(*channels)
                             elif self.channel_unit == 'Digital Value':
-                                channels.append(value)
+                                payload_str = ('CH1: {} , CH2: {} , CH3: {} , CH4: {} , ' +
+                                            'CH5: {} , CH6: {} , CH7: {} , CH8: {} , ' +
+                                            'CH9: {} , CH10: {} , CH11: {} , CH12: {} , ' +
+                                            'CH13: {} , CH14: {} , CH15: {} , CH16: {} ').format(*channels)
                             else:
-                                channels.append(value)
-                                channels.append(value_ms)
-                    # print(channels)
-                    if self.channel_unit in self.channel_unit_options:
-                        if self.channel_unit == 'ms':
-                            payload_str = ('CH1: {} ms, CH2: {} ms, CH3: {} ms, CH4: {} ms, ' +
-                                           'CH5: {} ms, CH6: {} ms, CH7: {} ms, CH8: {} ms, ' +
-                                           'CH9: {} ms, CH10: {} ms, CH11: {} ms, CH12: {} ms, ' +
-                                           'CH13: {} ms, CH14: {} ms, CH15: {} ms, CH16: {} ms').format(*channels)
-                        elif self.channel_unit == 'Digital Value':
-                            payload_str = ('CH1: {} , CH2: {} , CH3: {} , CH4: {} , ' +
-                                           'CH5: {} , CH6: {} , CH7: {} , CH8: {} , ' +
-                                           'CH9: {} , CH10: {} , CH11: {} , CH12: {} , ' +
-                                           'CH13: {} , CH14: {} , CH15: {} , CH16: {} ').format(*channels)
-                        else:
-                            payload_str = ('CH1: {} ({} ms), CH2: {} ({} ms), CH3: {} ({} ms), CH4: {} ({} ms), ' +
-                                           'CH5: {} ({} ms), CH6: {} ({} ms), CH7: {} ({} ms), CH8: {} ({} ms), ' +
-                                           'CH9: {} ({} ms), CH10: {} ({} ms), CH11: {} ({} ms), CH12: {} ({} ms), ' +
-                                           'CH13: {} ({} ms), CH14: {} ({} ms), CH15: {} ({} ms), CH16: {} ({} ms)').format(*channels)
-                    print(payload_str)
-                    analyzerframe = AnalyzerFrame('crsf_payload', self.crsf_payload_start, self.crsf_payload_end, {
-                        'payload': payload_str
+                                payload_str = ('CH1: {} ({} ms), CH2: {} ({} ms), CH3: {} ({} ms), CH4: {} ({} ms), ' +
+                                            'CH5: {} ({} ms), CH6: {} ({} ms), CH7: {} ({} ms), CH8: {} ({} ms), ' +
+                                            'CH9: {} ({} ms), CH10: {} ({} ms), CH11: {} ({} ms), CH12: {} ({} ms), ' +
+                                            'CH13: {} ({} ms), CH14: {} ({} ms), CH15: {} ({} ms), CH16: {} ({} ms)').format(*channels)
+                        print(payload_str)
+                        analyzerframe = AnalyzerFrame('crsf_payload', self.crsf_payload_start, self.crsf_payload_end, {
+                            'payload': payload_str
+                        })
+                    else:  # unrecognised Packet type
+                        analyzerframe = AnalyzerFrame('crsf_payload', self.crsf_payload_start, self.crsf_payload_end, {
+                            'payload': "Error in Type of Packet or not CRSF or not implemented",
+                            'error': "couldn't decode packet"})
+
+                    return analyzerframe
+                elif self.crsf_frame_current_index == (self.crsf_frame_length - 1):
+                    # Last byte is actually the CRC.
+                    analyzerframe = None
+                    self.crsf_payload.append(payload)
+                    #print('Payload complete ({}): {:2x}'.format(self.crsf_frame_current_index, payload))
+                    # print(self.crsf_payload)
+                    self.crsf_payload.insert(0, self.crsf_frame_type)
+                    # convert type to bytes and then calcualtion CRC
+                    crcresult = self.calCRC(packet=self.crsf_payload,
+                                            bytes=len(self.crsf_payload))
+                    if crcresult == 0:
+                        crcresult = 'Pass'
+                        error = ""
+                    else:
+                        crcresult = "Fail"
+                        error = "CRC Fail"
+                    analyzerframe = AnalyzerFrame('crsf_CRC', frame.start_time, frame.end_time, {
+                        'crccheck': f"{crcresult}",
+                        'error': f"{error}"
                     })
-                else:  # unrecognised Packet type
-                    analyzerframe = AnalyzerFrame('crsf_payload', self.crsf_payload_start, self.crsf_payload_end, {
-                        'payload': "Error in Type of Packet or not CRSF or not implemented",
-                        'error': "couldn't decode packet"})
 
-                return analyzerframe
-            elif self.crsf_frame_current_index == (self.crsf_frame_length - 1):
-                # Last byte is actually the CRC.
-                analyzerframe = None
-                self.crsf_payload.append(payload)
-                #print('Payload complete ({}): {:2x}'.format(self.crsf_frame_current_index, payload))
-                # print(self.crsf_payload)
-                self.crsf_payload.insert(0, self.crsf_frame_type)
-                # convert type to bytes and then calcualtion CRC
-                crcresult = self.calCRC(packet=self.crsf_payload,
-                                        bytes=len(self.crsf_payload))
-                if crcresult == 0:
-                    crcresult = 'Pass'
-                    error = ""
-                else:
-                    crcresult = "Fail"
-                    error = "CRC Fail"
-                analyzerframe = AnalyzerFrame('crsf_CRC', frame.start_time, frame.end_time, {
-                    'crccheck': f"{crcresult}",
-                    'error': f"{error}"
-                })
+                    # And initialize again for next frame
+                    self.crsf_frame_start = None
+                    self.crsf_frame_end = None
+                    self.dec_fsm = self.dec_fsm_e.Idle
+                    self.crsf_frame_length = 0
+                    self.crsf_frame_type = None
+                    self.crsf_frame_current_index = 0
+                    self.crsf_payload = []
+                    self.crsf_payload_start = None
+                    self.crsf_payload_end = None
+                    return analyzerframe
+        except Exception as e:
+            print(f'error occured {e}')
+            self.crsf_frame_start = None
+            self.crsf_frame_end = None
+            self.dec_fsm = self.dec_fsm_e.Idle
+            self.crsf_frame_length = 0
+            self.crsf_frame_type = None
+            self.crsf_frame_current_index = 0
+            self.crsf_payload = []
+            self.crsf_payload_start = None
+            self.crsf_payload_end = None
 
-                # And initialize again for next frame
-                self.crsf_frame_start = None
-                self.crsf_frame_end = None
-                self.dec_fsm = self.dec_fsm_e.Idle
-                self.crsf_frame_length = 0
-                self.crsf_frame_type = None
-                self.crsf_frame_current_index = 0
-                self.crsf_payload = []
-                self.crsf_payload_start = None
-                self.crsf_payload_end = None
-                return analyzerframe
 
     def calCRC(self, packet: list, bytes: int, gen_poly: int = 0xd5, start_from_byte=0):
         '''
