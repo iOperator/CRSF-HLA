@@ -1,6 +1,6 @@
 {
   "name": "CRSF",
-  "apiVersion": "1.0.0",
+  "apiVersion": "1.1.0",
   "author": "Ansh Chawla(Original code by : Max Gröning)",
   "version": "0.5.2",
   "description": "Crossfire decoder for R/C protocol as used by TBS Crossfire, Tracer or ExpressLRS",
