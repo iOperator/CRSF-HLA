@@ -13,13 +13,17 @@ Saleae Logic 2 High Level Analyzer: Crossfire decoder for R/C protocol as used b
 
 ## Features ✨
 
-This is still a very early release. Currently the following frames are supported:
+This is still a very early release. Currently full decoding of the following frames are supported:
 
 * Link statistics (0x14)
 * RC channels packed (0x16)
 * Battery Sensor Packet (0x08)
 * Flight Mode (0x21)
 * Gps Packet (0x02)(Experimental need testers)
+* Heart Beat Packet (0x0B)
+* Ping (0x28)
+* Attitude (0x1E)
+* Device info (0x29)
 
 It currently Contains the following features:
 
@@ -27,15 +31,12 @@ It currently Contains the following features:
 * Destination device address
 * Selectable Channel value units
 * payload length check for different packets
-* some basic error handling
+* basic error handling
 
 The decoder features a state machine that parses all frames so it can easily be extended to decode future frames.  
 Some groundwork for additional frames already exists.
 
 ## ToDo ☝️
 
-* Additional supported frames
-* add check for aync serial
-* pass parameters like address , len and all for all frames
-* implement search for packet feature
-* implement length mismatch
+* units of gps and others
+* altitude, pitch role yaw are to be checked
