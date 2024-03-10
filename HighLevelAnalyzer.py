@@ -243,17 +243,17 @@ class Hla(HighLevelAnalyzer):
                         bin_str = ''
                         for i in self.crsf_payload:
                             # Format as bits and reverse order
-                            bin_str += format(i, '08b')[::-1]
+                            bin_str += format(i, '08b')
                         # print(bin_str)
                         # 2 bytes - Voltage (mV * 100) BigEndian
-                        Voltage = int(bin_str[0:16][::-1], 2)/100
+                        Voltage = int(bin_str[0:16], 2)/10
                         # 2 bytes - Current (mA * 100)
-                        Current = int(bin_str[16:32][::-1], 2)/100
+                        Current = int(bin_str[16:32], 2)/10
                         # 3 bytes - Capacity (mAh)
-                        Capacity = int(bin_str[32:56][::-1], 2)
+                        Capacity = int(bin_str[32:56], 2)
                         # 1 byte  - Remaining (%)
-                        Battery_percentage = int(bin_str[56:64][::-1], 2)
-                        payload_str = f"Voltage: {'%.2f' % Voltage}mV ,Current: {'%.2f' % Current}mA ,Capacity: {'%.2f' % Capacity}mAh ,Battery %: {'%.2f' % Battery_percentage}"
+                        Battery_percentage = int(bin_str[56:64],2)
+                        payload_str = f"Voltage: {'%.2f' % Voltage}V ,Current: {'%.2f' % Current}A ,Capacity: {'%.2f' % Capacity}mAh ,Battery %: {'%.2f' % Battery_percentage}"
                         analyzerframe = AnalyzerFrame('crsf_payload', self.crsf_payload_start, self.crsf_payload_end, {
                             'payload': payload_str
                         })
