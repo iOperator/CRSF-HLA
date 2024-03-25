@@ -13,7 +13,7 @@ class Hla(HighLevelAnalyzer):
             'format': 'Going to: {{data.destination}}({{data.address}})'
         },
         'crsf_length_byte': {
-            'format': 'Length: {{data.length}}'
+            'format': 'Length: {{data.length}} ({{data.error}})'
         },
         'crsf_type_byte': {
             'format': 'Type: {{data.type}} ({{data.error}})'
@@ -180,6 +180,29 @@ class Hla(HighLevelAnalyzer):
                     self.crsf_payload = []
                     self.crsf_payload_start = None
                     self.crsf_payload_end = None
+                    return AnalyzerFrame('crsf_length_byte', frame.start_time, frame.end_time, {
+                    'length': str(payload),
+                    'error' : "length cannot be less than 2"
+                })
+
+                elif self.crsf_frame_length > 63:
+                    print("length of packet cannot be greater than 64")
+                    analyzerframe = AnalyzerFrame('crsf_length_byte', frame.start_time, frame.end_time, {
+                        'length': str(payload),
+                        'error': "length cannot be greater than 63"
+                    })
+
+                    # And initialize again for next frame
+                    self.crsf_new_packet_start = None
+                    self.dec_fsm = self.dec_fsm_e.Idle
+                    self.crsf_frame_length = 0
+                    self.crsf_frame_type = None
+                    self.crsf_frame_current_index = 0
+                    self.crsf_payload = []
+                    self.crsf_payload_start = None
+                    self.crsf_payload_end = None
+                    return analyzerframe
+                
                 return AnalyzerFrame('crsf_length_byte', frame.start_time, frame.end_time, {
                     'length': str(payload)
                 })
@@ -205,6 +228,16 @@ class Hla(HighLevelAnalyzer):
                     })
                 else:
                     print('Type: Unrecognised')
+                    # And initialize again for next frame
+                    self.crsf_new_packet_start = None
+                    self.dec_fsm = self.dec_fsm_e.Idle
+                    self.crsf_frame_length = 0
+                    self.crsf_frame_type = None
+                    self.crsf_frame_current_index = 0
+                    self.crsf_payload = []
+                    self.crsf_payload_start = None
+                    self.crsf_payload_end = None
+
                     return AnalyzerFrame('crsf_type_byte', frame.start_time, frame.end_time, {
                         'type': "Unrecognised",
                         'error': "Unrecognised type"
@@ -472,6 +505,22 @@ class Hla(HighLevelAnalyzer):
                     analyzerframe = AnalyzerFrame('crsf_CRC', frame.start_time, frame.end_time, {
                         'crccheck': f"{crcresult}",
                         'error': f"{error}"
+                    })
+
+                    # And initialize again for next frame
+                    self.crsf_new_packet_start = None
+                    self.dec_fsm = self.dec_fsm_e.Idle
+                    self.crsf_frame_length = 0
+                    self.crsf_frame_type = None
+                    self.crsf_frame_current_index = 0
+                    self.crsf_payload = []
+                    self.crsf_payload_start = None
+                    self.crsf_payload_end = None
+                    return analyzerframe
+                else:
+                    print("unknown error")
+                    analyzerframe = AnalyzerFrame('crsf_error', frame.start_time, frame.end_time, {
+                        'error': "Something Went Wrong"
                     })
 
                     # And initialize again for next frame
